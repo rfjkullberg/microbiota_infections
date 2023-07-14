@@ -625,8 +625,8 @@ matched %>%
   xlab("") +
   ylab("Shannon diversity") +
   scale_fill_manual(values = c("#4197cc", "#9f514d")) +
-  stat_compare_means(comparisons = comparisons, paired = T) +
   theme(legend.position = "none")
+anova(lme(Shannon ~ infection, random=~1|matchnumber,  data = matched))
 ```
 
 ```
@@ -638,8 +638,8 @@ matched %>%
   xlab("") +
   ylab("Butyrate-producers") +
   scale_fill_manual(values = c("#4197cc", "#9f514d")) +  
-  stat_compare_means(comparisons = comparisons, paired = T) +
   theme(legend.position = "none")
+anova(lme(butyrate ~ infection, random=~1|matchnumber,  data = matched))
 ```
 
 Next, we tested for differences in community composition
@@ -792,6 +792,7 @@ We computed contrasts to assess differences between subgroups in the association
 dd <- datadist(df)
 options(datadist='dd')
 
+summary(coxph(Surv(time, event=="infection") ~ Shannon * sex, df))
 cox.Shannonsex <- cph(Surv(time, event == "infection") ~ Shannon * sex, data=df)
 p.Shannonsex <- as.data.frame(Predict(cox.Shannonsex, Shannon, sex, fun = exp, ref.zero = T))
 
