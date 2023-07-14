@@ -5,6 +5,8 @@ This is the code used for the main analyses in "Impact of butyrate-producing gut
 A file containing mock clinical metadata is included to show the type of data, data structure and its definitions ('Mock data and definitions.xlsx'). 
 Data protection regulations do not allow public sharing of individual participant data on hospitalisations. Please refer to the data availability statement in the manuscript for information on how to gain data access. 
 
+[![DOI](https://zenodo.org/badge/657511587.svg)](https://zenodo.org/badge/latestdoi/657511587)
+
 
 ## Step 1 - Load libraries
 
@@ -827,3 +829,4 @@ w %>%
   theme_bw()
 ```
 Similar code was used to assess the other covariates. 
+
