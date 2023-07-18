@@ -143,7 +143,7 @@ rm(P.alpha, alpha, fit)
 ```
 
 ## 4 - Butyrate-producers 
-We quantified the relative abundance of butyrate-producing bacteria by calculating the relative abundance of 17 bacteria that are known to be the most abundant drivers of butyrate production. This  might take a while to run.
+We quantified the relative abundance of butyrate-producing bacteria by calculating the relative abundance of 15 bacteria that are known to be the most abundant drivers of butyrate production. This  might take a while to run.
 
 ```
 butyrate.producers <- c("Butyricimonas", "Odoribacter", "Alistipes", "Eubacterium", "Anaerostipes","Butyrivibrio","Coprococcus", "Roseburia","Shuttleworthia","Butyricicoccus","Faecalibacterium","Flavonifractor","Pseudoflavonifractor","Oscillibacter", "Subdoligranulum")
@@ -572,47 +572,33 @@ survp <- ggsurvplot(fit, data = riskscore,
 ```
 
 ## 8 - Matched analyses
-Nested age-, sex-, ethnicity-, BMI-, antibiotics-, and comorbidity-matched case-control analyses within the derivation cohort were used to examine differences in gut microbiota between participants with an infection-related hospitalisation (cases) and matched controls.
+Nested age-, sex-, ethnicity-, antibiotics-, and comorbidity-matched case-control analyses within the derivation cohort were used to examine differences in gut microbiota between participants with an infection-related hospitalisation (cases) and matched controls.
 
 ```
 m <- df %>%
   mutate(age_groups = cut(age, c(18, seq(40, 60, by=10), Inf), include.lowest=T)) %>%
-  filter(bmi != "NA") %>%
-  mutate(bmi_groups = if_else(bmi < 25, "<25", 
-                              if_else(bmi < 30, "25-29", "≥30"))) %>%
   filter(prior_antibiotics != "NA") %>%
   filter(comorb_pulmonary != "NA") %>%
   filter(comorb_gastrointestinal != "NA") %>%
-  rownames_to_column("rownumber") # 145 participants left; seven participants with an infection had missing data on matching factors
+  filter(comorb_diabetes != "NA")
+  # 146 participants left; six participants with an infection had missing data on matching factors
 ```
 ```
 set.seed(88)
-matched <- matchit(infection ~ sex+ethnicity+age_groups+bmi_groups+prior_antibiotics+comorb_pulmonary+comorb_gastrointestinal, 
+matched <- matchit(infection ~ sex+ethnicity+age_groups+prior_antibiotics+comorb_pulmonary+comorb_gastrointestinal+comorb_diabetes, 
                     data = m, 
                     method = "nearest", 
                     ratio=1)
                     
-matched <- as.data.frame(matched[["match.matrix"]]) %>%
-  rownames_to_column("rownumber1")  %>%
-  mutate(rownumber2 = V1) %>%
-  mutate(matchnumber = c(1:145))
-match.infection <- matched %>%
-  mutate(infection = "1") %>%
-  mutate(rownumber = rownumber1) %>%
-  dplyr::select(rownumber, matchnumber)
-match.control <- matched2 %>%
-  mutate(infection = "0") %>%
-  mutate(rownumber = rownumber2) %>%  
-  dplyr::select(rownumber, matchnumber) 
-
-matched <- rbind(match.infection, match.control) %>%
-  left_join(m2)
-rm(match.infection, match.control)
+matched <- match.data(matched)
 ```
 
 First, we compared Shannon diversity and the abundance of butyrate-producing bacteria between cases and matched controls. 
 ```
-alpha <- estimate_richness(P)
+P.matched <- P
+sample_data(P.matched) <- set.samp(matched)
+
+alpha <- estimate_richness(P.matched)
 alpha$sample <- row.names(alpha)
 alpha$sample <- gsub("X","",as.character(alpha$sample))
 alpha <- alpha %>% select(sample, Shannon)
@@ -628,7 +614,7 @@ matched %>%
   ylab("Shannon diversity") +
   scale_fill_manual(values = c("#4197cc", "#9f514d")) +
   theme(legend.position = "none")
-anova(lme(Shannon ~ infection, random=~1|matchnumber,  data = matched))
+anova(lme(Shannon ~ infection, random=~1|subclass,  data = matched))
 ```
 
 ```
@@ -641,21 +627,24 @@ matched %>%
   ylab("Butyrate-producers") +
   scale_fill_manual(values = c("#4197cc", "#9f514d")) +  
   theme(legend.position = "none")
-anova(lme(butyrate ~ infection, random=~1|matchnumber,  data = matched))
+anova(lme(butyrate ~ infection, random=~1|subclass,  data = matched))
 ```
 
 Next, we tested for differences in community composition
 
 ```
-P.matched <- P
-sample_data(P.matched) <- set.samp(matched)
+P.comp <- microbiome::transform(P.matched, "compositional")
 set.seed(88)
-bray <- phyloseq::distance(P.matched, method = "bray") 
-adonis2((bray ~ infection), by = 'margin', data = matched, permutations =999)
-ord <- ordinate(P.matched, method = "PCoA", distance = bray) 
+bray <- phyloseq::distance(P.comp, method = "bray")
+df.bray <- as.matrix(bray)
+df.bray <- as.data.frame(row.names(df.bray)) %>%
+  mutate(sample = `row.names(df.bray)`) %>%
+  left_join(matched)
+adonis2((bray ~ infection), by = 'margin', data = df.bray, permutations =999)
+ord <- ordinate(P.comp, method = "PCoA", distance = bray) 
 
 # Create dataframe with coordinates and centroids of participants 
-bray_df <- plot_ordination(P.matched, ord, type = "samples", color = "infection", justDF = T) 
+bray_df <- plot_ordination(P.comp, ord, type = "samples", color = "infection", justDF = T) 
 centroids <- aggregate(cbind(Axis.1, Axis.2)~infection, data=bray_df, mean)
 bray_df <- merge(bray_df, centroids, by="infection", suffixes=c("", ".centroid"))
 
@@ -681,7 +670,7 @@ ggplot() +
 ## 9 - Role of covariates
 In exploratory analyses in the derivation cohort, we further studied potential associations between covariates (such as demographics, lifestyle factors, antibiotics and comorbidities), the abundance of butyrate-producing bacteria, and infections. 
 
-First, we explored associations between covariates (sex, age) and the abundance of butyrate-producing bacteria. 
+First, we explored associations between covariates (sex and age are shown here as an example) and the abundance of butyrate-producing bacteria. 
 ```
 comparisons <- list(c("1", "2"))
 df %>%
