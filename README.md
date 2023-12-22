@@ -1,6 +1,6 @@
 # Gut microbiota and infectious disease hospitalisation
 
-This is the code used for the main analyses in "Impact of butyrate-producing gut microbiota on the risk of infectious disease hospitalisation: results from two large population-based cohorts" (submitted). For questions: Bob Kullberg at r.f.j.kullberg@amsterdamumc.nl
+This is the code used for the main analyses in "Association between butyrate-producing gut microbiota and the risk of infectious disease hospitalisation: results from two large population-based cohorts" (submitted). For questions: Bob Kullberg at r.f.j.kullberg@amsterdamumc.nl
 
 A file containing mock clinical metadata is included to show the type of data, data structure and its definitions ('Mock data and definitions.xlsx'). 
 Data protection regulations do not allow public sharing of individual participant data on hospitalisations. Please refer to the data availability statement in the manuscript for information on how to gain data access. 
@@ -146,8 +146,10 @@ rm(P.alpha, alpha, fit)
 We quantified the relative abundance of butyrate-producing bacteria by calculating the relative abundance of 15 bacteria that are known to be the most abundant drivers of butyrate production. This  might take a while to run.
 
 ```
-butyrate.producers <- c("Butyricimonas", "Odoribacter", "Alistipes", "Eubacterium", "Anaerostipes","Butyrivibrio","Coprococcus", "Roseburia","Shuttleworthia","Butyricicoccus","Faecalibacterium","Flavonifractor","Pseudoflavonifractor","Oscillibacter", "Subdoligranulum")
-butyrate.producers.species <- c("Subdoligranulum variabile")
+butyrate.producers <- c("Butyricimonas", "Odoribacter", "Anaerostipes", "Anaerobutyricum", "Agathobacter", 
+                        "Butyrivibrio","Coprococcus", "Roseburia","Shuttleworthia","Butyricicoccus",
+                        "Faecalibacterium","Flavonifractor","Pseudoflavonifractor","Oscillibacter", "Subdoligranulum")
+butyrate.producers.species <- c("Subdoligranulum variabile", "Eubacterium_G ventriosum")
 
 
 butyrate<- get.otu.melt(P, filter.zero = F)
@@ -216,11 +218,10 @@ ggsurvplot(fit, data = df,
            xscale = 365.25,
            axes.offset = F, 
            censor = F,
-           #xlim = c(0,2600),
            show.legend = F,
            xlab = "Years since sample collection", 
            ylab = "Cumulative Incidence", 
-           palette = c( "#882255", "#DDCC77",  "#44AA99"))
+           palette = c( "#882255", "#DDCC77", "#44AA99"))
 ```
 
 We performed a CLR-transformation to correct for the compositional nature of microbiome data
@@ -275,8 +276,70 @@ summary(coxph(Surv(time, event == "infection") ~
               data=df, id=sample_id))
 ```
 
+As sensitivity analysis, we used an alternative list of butyrate-producers (Antharam et al. J Clin Microbiol 2013)
 ```
-rm(butyrate, butyrate.clr, otu, OTU, P.CLR, tax.CLR, butyrate.producers, butyrate.producers.species, fit)
+butyrate.producers.alternative <- c("Pseudobutyrivibrio", "Anaerotruncus", "Acidaminococcus", "Cloacibacillus", "Fusobacterium",
+                                    "Moryella", "Anaerofustis", "Tannerella", "Anaeroglobus", "Pseudoramibacter",
+                                    "Roseburia", "Butyrivibrio", "Faecalibacterium", "Anaerostipes", "Subdoligranulum", 
+                                    "Coprococcus", "Butyricimonas", "Eubacterium", "Shuttleworthia", "Butyricococcus")
+
+butyrate <- get.otu.melt(P, filter.zero = F)
+butyrate$Genus <- gsub("g__","",as.character(butyrate$Genus)) # remove the "g__" addition if necessary
+butyrate$Species <- gsub("s__","",as.character(butyrate$Species)) # remove the "s__" addition if necessary
+
+butyrate <- butyrate %>%
+  splitstackshape::concat.split(split.col = "Genus", sep = "_") %>% # probably need to remove the additional Genus information (suffixes)
+  mutate(Genus = Genus_1) %>%
+  subset(Genus %in% butyrate.producers) %>%
+  group_by(sample_id)%>%                       
+  summarize(sum.alternative = sum(pctseqs))
+
+df <- left_join(df, butyrate) %>%
+  mutate(butyrate.alternative = sum.alternative*100) %>% # convert fractions to percents
+  mutate(tertiles_butyrate_alternative = ntile(`sum.alternative`, 3)) %>%
+  mutate(tertiles_butyrate_alternative = as.factor(if_else(tertiles_butyrate_alternative == 1, 'Low butyrate', if_else(tertiles_butyrate_alternative == 2, 'Intermediate butyrate', 'High butyrate')))) %>%
+  mutate(tertiles_butyrate_alternative = fct_relevel(tertiles_butyrate_alternative, "Low butyrate", "Intermediate butyrate", "High butyrate")) %>%
+  dplyr::select(-sum.alternative)
+```
+```
+summary(coxph(Surv(time, event == "infection") ~ butyrate.alternative, data=df, id=sample_id)) # as continuous variable
+summary(coxph(Surv(time, event == "infection") ~ tertiles_butyrate_alternative, data=df, id=sample_id)) # in tertiles
+```
+```
+summary(coxph(Surv(time, event == "infection") ~ 
+                butyrate.alternative + age + sex + ethnicity +
+                smoking + alcohol + prior_antibiotics +  physical_activity +
+                comorb_diabetes + comorb_cardiovascular + comorb_cancer	+ comorb_hypertension + comorb_pulmonary + comorb_gastrointestinal, 
+              data=df, id=sample_id))
+```
+
+```
+df %>%
+  ggplot(aes(x= "", y = butyrate.alternative, fill = tertiles_butyrate_alternative)) +
+  geom_jitter(color = "black", pch = 21, alpha =.85, size = 3, width = 0.2)+
+  geom_hline(linetype = 2, max(df$butyrate.alternative[df$tertiles_butyrate_alternative == "Intermediate butyrate"])) + 
+  geom_hline(linetype = 2, max(df$butyrate.alternative[df$tertiles_butyrate_alternative == "Low butyrate"])) + 
+  scale_fill_manual(values=c( "#882255", "#DDCC77", '#44AA99')) +
+  theme_cowplot()+
+  xlab("")+
+  ylab("Butyrate-producing bacteria (alternative definition)")+
+  theme(legend.position = "none")
+
+fit <- survfit(Surv(time, event == "infection") ~ tertiles_butyrate_alternative, data=df)
+ggsurvplot(fit, data = df, 
+           fun = "event", 
+           break.time.by = 365.25, 
+           xscale = 365.25,
+           axes.offset = F, 
+           censor = F,
+           show.legend = F,
+           xlab = "Years since sample collection", 
+           ylab = "Cumulative Incidence", 
+           palette = c( "#882255", "#DDCC77", "#44AA99"))
+```
+
+```
+rm(butyrate, butyrate.clr, otu, OTU, P.CLR, tax.CLR, butyrate.producers, butyrate.producers.species, fit, butyrate.producers.alternative)
 ```
 
 ## 5 - Beta diversity
@@ -292,8 +355,10 @@ We created a figure showing the centroids of our two main groups (infection / no
 ord <- ordinate(P.comp, method = "PCoA", distance = bray)
 
 # Create dataframe with coordinates and centroids of participants
-bray_df <- plot_ordination(P.comp, ord, type = "samples", color = "infection", justDF = T) %>%
-  dplyr::select(Axis.1, Axis.2, sample_id, infection)
+bray_df <- plot_ordination(P.comp, ord, type = "samples", color = "infection", justDF = T)
+var.explained <- bray_df[["labels"]]
+bray_df <- bray_df[["data"]] %>%
+  dplyr::select(Axis.1, Axis.2, sample_id, infection) 
 centroids <- aggregate(cbind(Axis.1, Axis.2)~infection, data=bray_df, mean)
 bray_df <- merge(bray_df, centroids, by="infection", suffixes=c("", ".centroid"))
 
@@ -313,8 +378,8 @@ ggplot() +
   geom_point(data = centroids, aes(x=Axis.1, y=Axis.2, colour = infection), size = 5) +
   theme_cowplot() +
   scale_colour_manual(values=c("#4197CC", "#9F514D")) +
-  xlab("Axis1")+
-  ylab("Axis2")+
+  xlab(var.explained[["x"]])+
+  ylab(var.explained[["y"]])+
   theme(legend.position = "none",
         axis.ticks = element_blank(),
         axis.text = element_blank())
@@ -332,8 +397,8 @@ ggplot() +
   stat_ellipse(data = bray_df_no, aes(Axis.1, Axis.2), level = 0.95, lwd= 3) +
   geom_point(data = centroids, aes(x=Axis.1, y=Axis.2), size = 5) +
   theme_cowplot() +
-  xlab("Axis1")+
-  ylab("Axis2")+
+  xlab(var.explained[["x"]])+
+  ylab(var.explained[["y"]])+
   scale_colour_gradient2(low = "#821d4e", mid = "#DDCC77", high = "#1d8251", midpoint = median(bray_df$butyrate))+
   theme(legend.position = "none",
         axis.ticks = element_blank(),
@@ -719,8 +784,6 @@ cshr <- as.data.frame(rbind(
       summary(coxph(surv_object ~ comorb_hypertension, data = df, id = sample_id))[["conf.int"]], 
       summary(coxph(surv_object ~ comorb_pulmonary, data = df, id = sample_id))[["conf.int"]], 
       summary(coxph(surv_object ~ comorb_gastrointestinal, data = df, id = sample_id))[["conf.int"]],
-      summary(coxph(surv_object ~ diet_fattyacids, data = df, id = sample_id))[["conf.int"]],
-      summary(coxph(surv_object ~ diet_satfattyacids, data = df, id = sample_id))[["conf.int"]],
       summary(coxph(surv_object ~ diet_fibres, data = df, id = sample_id))[["conf.int"]]))
 
 pval <- as.data.frame(rbind(
@@ -738,8 +801,6 @@ pval <- as.data.frame(rbind(
   summary(coxph(surv_object ~ comorb_hypertension, data = df, id = sample_id))[["coefficients"]], 
   summary(coxph(surv_object ~ comorb_pulmonary, data = df, id = sample_id))[["coefficients"]], 
   summary(coxph(surv_object ~ comorb_gastrointestinal, data = df, id = sample_id))[["coefficients"]],
-  summary(coxph(surv_object ~ diet_fattyacids, data = df, id = sample_id))[["coefficients"]],
-  summary(coxph(surv_object ~ diet_satfattyacids, data = df, id = sample_id))[["coefficients"]],
   summary(coxph(surv_object ~ diet_fibres, data = df, id = sample_id))[["coefficients"]])) %>%
   mutate(pvalue = as.numeric(`Pr(>|z|)`)) %>%
   dplyr::select(pvalue)
@@ -754,7 +815,7 @@ coxmodels <- as.data.frame(cbind(cshr, pval)) %>%
   rbind(list(variable = "Dutch ethnicity", cshr=1.00, lower=1.00, upper=1.00, pvalue=1.00)) %>% # setting 'Dutch ethnicity' as reference value
   rbind(list(variable = "Smoking, never", cshr=1.00, lower=1.00, upper=1.00, pvalue=1.00)) %>% # setting 'Smoking, never' as reference value
   mutate(variable = fct_relevel(variable, 
-                                "diet_fibres", "diet_satfattyacids", "diet_fattyacids",
+                                "diet_fibres", 
                                 "comorb_cancer", "comorb_gastrointestinal1", "comorb_pulmonary1", "comorb_hypertension1", "comorb_cardiovascular1", "comorb_diabetes1", 
                                 "med_corticosteroids1", "probiotics1", "prior_antibiotics1", "physical_activity1", "alcohol2", "smoking3","smoking1", "Smoking, never",
                                 "bmi_groups≥30", "bmi_groups25-29", "BMI <25"
