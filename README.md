@@ -226,7 +226,7 @@ ggsurvplot(fit, data = df,
 
 We performed a CLR-transformation to correct for the compositional nature of microbiome data
 ```
-P.clr <- P
+P.CLR <- P
 tax.CLR <- get.tax(P.CLR) 
 tax.CLR$Genus <- gsub("g__","",as.character(tax.CLR$Genus)) # remove the "g__" addition if necessary
 tax.CLR$Species <- gsub("s__","",as.character(tax.CLR$Species)) # remove the "s__" addition if necessary
